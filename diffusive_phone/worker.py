@@ -15,6 +15,8 @@ diffusion_token = os.environ['DIFFUSION_TOKEN']
 #server = os.environ['SERVER']
 #key = os.environ['KEY']
 
+# TODO: add authentication
+
 load_start = time.time()
 print('Loading model...')
 pipe = StableDiffusionPipeline.from_pretrained(
