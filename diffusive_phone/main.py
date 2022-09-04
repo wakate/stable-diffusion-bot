@@ -6,6 +6,7 @@ import asyncio
 
 from typing import Union
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
@@ -28,9 +29,9 @@ print(f'Loading model done in {load_end - load_start} seconds')
 
 app = FastAPI()
 
-@app.get('/')
-def read_root():
-    return { 'Hello': 'World' }
+@app.get('/', response_class=FileResponse)
+def index():
+    return 'index.html'
 
 class Query(BaseModel):
     prompt: str
