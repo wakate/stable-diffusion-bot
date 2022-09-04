@@ -35,14 +35,13 @@ def read_root():
 class Query(BaseModel):
     prompt: str
 
-def generate_image(prompt):
-    with torch.autocast('cuda'):
-        return pipe(prompt)['sample'][0]
-
+inference_lock = asyncio.Lock()
 @app.post('/query')
-def run_inference(query: Query):
-    with torch.autocast('cuda'):
-        image = pipe(query.prompt)['sample'][0]
+async def run_inference(query: Query):
+    # Asyncronous calls seem to mess with inference, so we add a mutex here
+    async with inference_lock:
+        with torch.autocast('cuda'):
+            image = pipe(query.prompt)['sample'][0]
 
     buffer = BytesIO()
     image.save(buffer, format='PNG')
@@ -50,6 +49,10 @@ def run_inference(query: Query):
     return StreamingResponse(buffer, media_type='image/png')
 
 # Below unfortunately doesn't work; it tries to load the model multiple times, running out of memory... :(
+#def generate_image(prompt):
+#    with torch.autocast('cuda'):
+#        return pipe(prompt)['sample'][0]
+#
 #@app.post('/query')
 #async def run_inference(query: Query):
 #    with ProcessPoolExecutor() as executor:
