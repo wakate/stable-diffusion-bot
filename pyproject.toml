@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "diffusive-phone"
+version = "0.1.0"
+description = ""
+authors = ["mt-caret <mtakeda.enigsol@gmail.com>"]
+readme = "README.md"
+packages = [{include = "diffusive_phone"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.12"
+fastapi = "^0.81.0"
+uvicorn = {extras = ["standard"], version = "^0.18.3"}
+diffusers = "0.2.4"
+transformers = "^4.21.2"
+scipy = "^1.9.1"
+ftfy = "^6.1.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
