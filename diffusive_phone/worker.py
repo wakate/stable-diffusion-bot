@@ -46,7 +46,10 @@ async def connect():
             print(f'Running generation for prompt: "{prompt}"')
 
             with torch.autocast('cuda'):
-                image = pipe(prompt)['sample'][0]
+                result = pipe(prompt)
+
+            image = result['sample'][0]
+            is_nsfw = result['nsfw_content_detected'][0]
 
             print('Done.')
 
@@ -55,7 +58,8 @@ async def connect():
             await websocket.send(json.dumps({
                 'kind': 'done',
                 'worker_id': str(worker_id),
-                'image':  base64.b64encode(buffer.getvalue()).decode('ascii')
+                'image':  base64.b64encode(buffer.getvalue()).decode('ascii'),
+                'is_nsfw': is_nsfw
             }))
 
 async def run():

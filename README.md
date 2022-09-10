@@ -6,6 +6,7 @@ A gartic-phone-like game where the AI draws for you!
 
 ## TODO
 
+- [x] switch to using Discord-bot-based communication
 - [ ] implement user authentication
 - [ ] add progress indicator?
 - [ ] generate multiple images at once?

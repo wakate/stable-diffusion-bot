@@ -1,87 +1,159 @@
-import io
-import json
-import base64
+import enum
 from datetime import datetime
+import json
+import io
+from io import BytesIO
+import base64
+import os
+
+import threading
 import asyncio
+import websockets
 
-from typing import Union
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from starlette.responses import StreamingResponse
+import discord
+from discord.ext import commands
 
-app = FastAPI()
+class WorkerState(enum.Enum):
+    Ready = enum.auto()
+    # TODO: Reserverd?
+    Busy = enum.auto()
+    Dead = enum.auto()
 
-@app.get('/', response_class=FileResponse)
-def index():
-    return 'index.html'
-
-workers = {}
-workers_lock = asyncio.Lock()
 class Worker():
     def __init__(
         self,
         last_message_on: datetime,
         id: str,
-        state: str,
-        websocket: WebSocket,
-        ):
+        websocket,
+    ):
         self.last_message_on = last_message_on
         self.id = id
-        self.state = state
+        self.state = WorkerState.Ready
         self.websocket = websocket
+        self.death_future = asyncio.get_event_loop().create_future()
+        # TODO: handle disconnect
+
+    def is_ready(self):
+        return self.state == WorkerState.Ready
+
+    def mark_busy(self):
+        self.state = WorkerState.Busy
 
     async def dispatch(self, prompt: str):
         try:
-            await self.websocket.send_text(json.dumps({
+            await self.websocket.send(json.dumps({
                 'kind': 'prompt',
                 'prompt': prompt,
             }))
 
-            m = json.loads(await self.websocket.receive_text())
+            m = json.loads(await self.websocket.recv())
             assert(m['kind'] == 'done')
-            return io.BytesIO(base64.b64decode(m['image'].encode('ascii')))
-        except WebSocketDisconnect:
-            print(f'worker ({self.id}) disconnected!')
-            self.state = 'dead'
-            async with workers_lock:
-                del workers[self.id]
+            print('response found!')
+        except websockets.exceptions.WebSocketException as e:
+            print(f'Encountered exception {e}')
+            self.state = WorkerState.Dead
+            self.death_future.set_value(None)
             return None
 
-@app.websocket('/ws')
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    m = json.loads(await websocket.receive_text())
+        self.state = WorkerState.Ready
+        return {
+            'image': io.BytesIO(base64.b64decode(m['image'].encode('ascii'))),
+            'is_nsfw': m['is_nsfw'],
+        }
+
+    async def done(self):
+       await self.death_future
+
+# TODO: This isn't really a queue
+class WorkQueue():
+    def __init__(
+        self
+    ): 
+        self.workers = {}
+        self.workers_lock = asyncio.Lock()
+        self.queue = asyncio.Queue()
+
+    async def add_worker(self, worker):
+        print(f'Adding worker: {worker.id}')
+        async with self.workers_lock:
+            self.workers[worker.id] = worker
+
+        await worker.done()
+
+        print(f'Removing worker: {worker.id}')
+        async with self.workers_lock:
+            del self.workers[worker.id]
+
+    async def dispatch(self, prompt):
+        chosen_worker = None
+        while chosen_worker is None:
+            async with self.workers_lock:
+                for worker in self.workers.values():
+                    if worker.is_ready():
+                        chosen_worker = worker
+                        worker.mark_busy()
+            
+            if chosen_worker is None:
+                print('Couldn\'t find worker! sleeping for 1 second and trying again')
+                await asyncio.sleep(1)
+        
+        print(f'Dispatching to worker {chosen_worker.id}')
+
+        result = await chosen_worker.dispatch(prompt)
+
+        return result
+
+work_queue = WorkQueue()
+
+async def ws_handler(ws):
+    print('connection!!')
+    m = json.loads(await ws.recv())
     worker = Worker(
         last_message_on=datetime.now(),
         id=m['worker_id'],
-        state='ready',
-        websocket=websocket
+        websocket=ws,
     )
-    workers[worker.id] = worker
-    print(f'worker ({worker.id}) connected!')
+    await work_queue.add_worker(worker)
 
-    while True:
-        await asyncio.sleep(1)
-        if worker.state == 'dead':
-            break
+async def run_ws_server():
+    async with websockets.serve(ws_handler, 'localhost', 8000):
+        await asyncio.Future()
 
-class Query(BaseModel):
-    prompt: str
+intents = discord.Intents.default()
+intents.message_content = True
 
-@app.post('/query')
-async def dispatch_inference(query: Query):
-    async with workers_lock:
-        for worker in workers.values():
-            if worker.state == 'ready':
-                worker_to_dispatch_to = worker
-                worker_to_dispatch_to.state = 'busy'
-                break
+bot = commands.Bot(command_prefix='$', intents=intents)
 
-    # TODO: handle when there are no ready workers
+@bot.command()
+async def generate(ctx, prompt):
+    print(f'Running generation for prompt: "{prompt}" ({ctx})')
 
-    # TODO: handle when encoded_image is None (i.e. worker disconnected)
-    image = await worker_to_dispatch_to.dispatch(query.prompt)
-    worker_to_dispatch_to.state = 'ready'
+    result = await work_queue.dispatch(prompt)
 
-    return StreamingResponse(image, media_type='image/png')
+    print(f'Done (is_nsfw={result["is_nsfw"]}).')
+
+    if result['is_nsfw']:
+        await ctx.reply('不適切な可能性のある内容が検出されました。生成をし直すか、別なプロンプトを試してください。')
+    else:
+        sent_msg = await ctx.reply(f'プロンプト: "{prompt}"', file=discord.File(result['image'], filename='result.png', description=prompt))
+
+        def check(msg):
+            return (
+                msg.type == discord.MessageType.reply and
+                msg.reference is not None and
+                msg.reference.message_id == sent_msg.id and
+                '提出' in msg.content
+            )
+
+        msg = await bot.wait_for('message', check=check)
+        # TODO: handle
+        await msg.reply('提出が完了しました!')
+
+async def main():
+    discord.utils.setup_logging()
+    async with bot:
+        # We intentionally create a reference here so this task doesn't get GC-ed.
+        server = bot.loop.create_task(run_ws_server())
+        await bot.start(os.environ['DISCORD_TOKEN'])
+
+asyncio.run(main())
