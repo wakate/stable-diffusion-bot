@@ -11,3 +11,9 @@ A gartic-phone-like game where the AI draws for you!
 - [ ] add progress indicator?
 - [ ] generate multiple images at once?
 - [x] use a worker queue for generating multiple images in parallel?
+
+- [ ] deploy to AWS
+  - domain name actually isn't really necessary...
+- [ ] implement game
+  - it would be nice if we could use buttons...
+- [ ] implement control channel commands

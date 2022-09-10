@@ -126,7 +126,7 @@ intents.message_content = True
 bot = commands.Bot(command_prefix='$', intents=intents)
 
 @bot.command()
-async def generate(ctx, prompt):
+async def generate(ctx, *, prompt):
     logging.info(f'Running generation for prompt: "{prompt}" ({ctx})')
 
     result = await work_queue.dispatch(prompt)
