@@ -151,6 +151,7 @@ def parse_prompt(prompt):
         'guidance_scale': float,
         # TODO: clamp
         'num_inference_steps': int,
+        # TODO: specifying height, weight results in OOM
         'eta': float,
         'seed': int,
     }
