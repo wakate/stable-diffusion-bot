@@ -5,6 +5,8 @@ import io
 import base64
 import os
 import logging
+import itertools
+import random
 
 import asyncio
 import websockets
@@ -39,12 +41,13 @@ class Worker():
     def mark_busy(self):
         self.state = WorkerState.Busy
 
-    async def dispatch(self, prompt: str):
+    async def dispatch(self, prompt: str, options):
         try:
             # TODO: add some timeout here in case something hangs?
             await self.websocket.send(json.dumps({
                 'kind': 'prompt',
                 'prompt': prompt,
+                'options': options,
             }))
 
             m = json.loads(await self.websocket.recv())
@@ -86,7 +89,7 @@ class WorkQueue():
         async with self.workers_lock:
             del self.workers[worker.id]
 
-    async def dispatch(self, prompt):
+    async def dispatch(self, prompt, options):
         chosen_worker = None
         while chosen_worker is None:
             async with self.workers_lock:
@@ -103,7 +106,7 @@ class WorkQueue():
         
         self.logger.info(f'Dispatching to worker {chosen_worker.id}')
 
-        return (await chosen_worker.dispatch(prompt))
+        return (await chosen_worker.dispatch(prompt, options))
 
 work_queue = WorkQueue()
 
@@ -125,23 +128,61 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix='$', intents=intents)
 
+def parse_prompt(prompt):
+    words = prompt.split(' ')
+
+    def before_and_after(p, l):
+        return (itertools.takewhile(p, l), itertools.dropwhile(p, l))
+
+    options, prompt = before_and_after(lambda s: len(s.split('=')) == 2, words)
+    options = {
+        x[0]: x[1]
+        for x
+        in [
+            option.split('=')
+            for option
+            in options
+        ]
+    }
+    prompt = ' '.join(prompt)
+
+    ret = {}
+    allowed_options = {
+        'guidance_scale': float,
+        # TODO: clamp
+        'num_inference_steps': int,
+        'eta': float,
+        'seed': int,
+    }
+
+    for (name, parser) in allowed_options.items():
+        if name in options:
+            ret[name] = parser(options[name])
+    return (ret, prompt)
+
 @bot.command()
 async def generate(ctx, *, prompt):
-    logging.info(f'Running generation for prompt: "{prompt}" ({ctx})')
+    raw_prompt = prompt
+    options, prompt = parse_prompt(prompt)
+    if 'seed' not in options:
+        # TODO think about this
+        options['seed'] = random.randint(0, 1000000)
+    logging.info(f'Running generation for prompt: "{prompt}" ({options}) (raw prompt: {raw_prompt}) ({ctx})')
 
-    result = await work_queue.dispatch(prompt)
+    result = await work_queue.dispatch(prompt, options)
 
     while result is None:
         logging.warning(f'Retrying dispatch in 10 seconds')
         await asyncio.sleep(10)
-        result = await work_queue.dispatch(prompt)
+        result = await work_queue.dispatch(prompt, options)
 
     logging.info(f'Done (is_nsfw={result["is_nsfw"]}).')
 
     if result['is_nsfw']:
         await ctx.reply('不適切な可能性のある内容が検出されました。生成をし直すか、別なプロンプトを試してください。')
     else:
-        sent_msg = await ctx.reply(f'プロンプト: "{prompt}"', file=discord.File(result['image'], filename='result.png', description=prompt))
+        reply_msg = f'プロンプト: "{prompt}" ({options})'
+        sent_msg = await ctx.reply(reply_msg, file=discord.File(result['image'], filename='result.png', description=prompt))
 
         def check(msg):
             return (

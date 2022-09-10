@@ -48,17 +48,23 @@ async def connect():
             # TODO: add some timeout if something hangs on the websocket?
             m = json.loads(await websocket.recv())
             prompt = m['prompt']
-            logging.info(f'Running generation for prompt: "{prompt}"')
+            options = m['options']
+            logging.info(f'Running generation for prompt: "{prompt}" ({options})')
+
+            # TODO: this will always be in options?
+            if 'seed' in options:
+                options['generator'] = torch.Generator(device='cuda').manual_seed(options['seed'])
+                del options['seed']
 
             inference_start = time.time()
             with torch.autocast('cuda'):
-                result = pipe(prompt)
+                result = pipe(prompt, **options)
 
             image = result['sample'][0]
             is_nsfw = result['nsfw_content_detected'][0]
             inference_end = time.time()
 
-            logging.info(f'Generati9on complete ({inference_end - inference_start} seconds)')
+            logging.info(f'Generation complete ({inference_end - inference_start} seconds)')
 
             buffer = BytesIO()
             image.save(buffer, format='PNG')
