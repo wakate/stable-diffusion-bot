@@ -2,11 +2,10 @@ import enum
 from datetime import datetime
 import json
 import io
-from io import BytesIO
 import base64
 import os
+import logging
 
-import threading
 import asyncio
 import websockets
 
@@ -31,6 +30,7 @@ class Worker():
         self.state = WorkerState.Ready
         self.websocket = websocket
         self.death_future = asyncio.get_event_loop().create_future()
+        self.logger = logging.getLogger('worker')
         # TODO: handle disconnect
 
     def is_ready(self):
@@ -41,6 +41,7 @@ class Worker():
 
     async def dispatch(self, prompt: str):
         try:
+            # TODO: add some timeout here in case something hangs?
             await self.websocket.send(json.dumps({
                 'kind': 'prompt',
                 'prompt': prompt,
@@ -48,11 +49,10 @@ class Worker():
 
             m = json.loads(await self.websocket.recv())
             assert(m['kind'] == 'done')
-            print('response found!')
         except websockets.exceptions.WebSocketException as e:
-            print(f'Encountered exception {e}')
+            self.logger.warning(f'Encountered exception {e}')
             self.state = WorkerState.Dead
-            self.death_future.set_value(None)
+            self.death_future.set_result(None)
             return None
 
         self.state = WorkerState.Ready
@@ -72,15 +72,16 @@ class WorkQueue():
         self.workers = {}
         self.workers_lock = asyncio.Lock()
         self.queue = asyncio.Queue()
+        self.logger = logging.getLogger('work_queue')
 
     async def add_worker(self, worker):
-        print(f'Adding worker: {worker.id}')
+        self.logger.info(f'Adding worker: {worker.id}')
         async with self.workers_lock:
             self.workers[worker.id] = worker
 
         await worker.done()
 
-        print(f'Removing worker: {worker.id}')
+        self.logger.info(f'Removing worker: {worker.id}')
         async with self.workers_lock:
             del self.workers[worker.id]
 
@@ -93,20 +94,19 @@ class WorkQueue():
                         chosen_worker = worker
                         worker.mark_busy()
             
+            # TODO: if this happens a lot, maybe send a message saying
+            # workers are congested?
             if chosen_worker is None:
-                print('Couldn\'t find worker! sleeping for 1 second and trying again')
-                await asyncio.sleep(1)
+                self.logger.warning('Couldn\'t find worker! sleeping for 5 seconds, then trying again')
+                await asyncio.sleep(5)
         
-        print(f'Dispatching to worker {chosen_worker.id}')
+        self.logger.info(f'Dispatching to worker {chosen_worker.id}')
 
-        result = await chosen_worker.dispatch(prompt)
-
-        return result
+        return (await chosen_worker.dispatch(prompt))
 
 work_queue = WorkQueue()
 
 async def ws_handler(ws):
-    print('connection!!')
     m = json.loads(await ws.recv())
     worker = Worker(
         last_message_on=datetime.now(),
@@ -126,11 +126,16 @@ bot = commands.Bot(command_prefix='$', intents=intents)
 
 @bot.command()
 async def generate(ctx, prompt):
-    print(f'Running generation for prompt: "{prompt}" ({ctx})')
+    logging.info(f'Running generation for prompt: "{prompt}" ({ctx})')
 
     result = await work_queue.dispatch(prompt)
 
-    print(f'Done (is_nsfw={result["is_nsfw"]}).')
+    while result is None:
+        logging.warning(f'Retrying dispatch in 10 seconds')
+        await asyncio.sleep(10)
+        result = await work_queue.dispatch(prompt)
+
+    logging.info(f'Done (is_nsfw={result["is_nsfw"]}).')
 
     if result['is_nsfw']:
         await ctx.reply('不適切な可能性のある内容が検出されました。生成をし直すか、別なプロンプトを試してください。')

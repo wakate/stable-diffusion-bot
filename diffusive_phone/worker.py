@@ -4,6 +4,8 @@ import uuid
 import json
 import base64
 from io import BytesIO
+import logging
+
 import asyncio
 import websockets
 
@@ -17,8 +19,10 @@ diffusion_token = os.environ['DIFFUSION_TOKEN']
 
 # TODO: add authentication
 
+logging.basicConfig(level=logging.INFO)
+
 load_start = time.time()
-print('Loading model...')
+logging.info('Loading model...')
 pipe = StableDiffusionPipeline.from_pretrained(
     "CompVis/stable-diffusion-v1-4",
     revision='fp16',
@@ -27,31 +31,34 @@ pipe = StableDiffusionPipeline.from_pretrained(
 )
 pipe.to('cuda')
 load_end = time.time()
-print(f'Loading model done in {load_end - load_start} seconds')
+logging.info(f'Loading model done in {load_end - load_start} seconds')
 
 server = 'ws://localhost:8000/ws'
 worker_id = uuid.uuid4()
-print(f'worker_id is {worker_id}')
+logging.info(f'worker_id is {worker_id}')
 
 async def connect():
     async with websockets.connect(server) as websocket:
-        print('Connected!')
+        logging.info('Connected!')
         await websocket.send(json.dumps({
             'kind': 'ready',
             'worker_id': str(worker_id)
         }))
         while True:
+            # TODO: add some timeout if something hangs on the websocket?
             m = json.loads(await websocket.recv())
             prompt = m['prompt']
-            print(f'Running generation for prompt: "{prompt}"')
+            logging.info(f'Running generation for prompt: "{prompt}"')
 
+            inference_start = time.time()
             with torch.autocast('cuda'):
                 result = pipe(prompt)
 
             image = result['sample'][0]
             is_nsfw = result['nsfw_content_detected'][0]
+            inference_end = time.time()
 
-            print('Done.')
+            logging.info(f'Generati9on complete ({inference_end - inference_start} seconds)')
 
             buffer = BytesIO()
             image.save(buffer, format='PNG')
@@ -64,7 +71,7 @@ async def connect():
 
 async def run():
     while True:
-        print('Attempting connection!')
+        logging.info('Attempting connection!')
         try:
             await connect()
         except (
@@ -73,7 +80,7 @@ async def run():
             asyncio.exceptions.TimeoutError,
             ConnectionRefusedError
         ) as e:
-            print(f'Connection closed; reconnecting in 5 seconds! ({e})')
+            logging.warning(f'Connection closed; reconnecting in 5 seconds! ({e})')
             await asyncio.sleep(5)
 
 asyncio.run(run())
