@@ -49,6 +49,7 @@ class Worker():
 
             m = json.loads(await self.websocket.recv())
             assert(m['kind'] == 'done')
+            self.last_message_on=datetime.now()
         except websockets.exceptions.WebSocketException as e:
             self.logger.warning(f'Encountered exception {e}')
             self.state = WorkerState.Dead
