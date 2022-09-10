@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "diffusive-phone-server"
+version = "0.1.0"
+description = ""
+authors = ["mt_caret <mtakeda.enigsol@gmail.com>"]
+readme = "../README.md"
+packages = [{include = "diffusive_phone_server"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+"discord.py" = "^2.0.1"
+websockets = "^10.3"
+
+
+[tool.poetry.group.dev.dependencies]
+ipython = "^8.5.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
