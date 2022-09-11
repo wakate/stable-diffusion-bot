@@ -8,6 +8,7 @@ import logging
 import itertools
 import random
 import hashlib
+import sqlite3
 
 import asyncio
 import websockets
@@ -175,6 +176,7 @@ async def run_ws_server():
 intents = discord.Intents.default()
 intents.message_content = True
 
+# TODO: convert into class?
 bot = commands.Bot(command_prefix='$', intents=intents)
 
 def parse_prompt(prompt):
@@ -224,9 +226,17 @@ def parse_prompt(prompt):
 
     return (ret, prompt)
 
+conn = sqlite3.connect('server.db')
+
 # TODO: handle syntax errors (possibly print a help message?)
 @bot.command()
 async def generate(ctx, *, prompt):
+    cur = conn.execute('''
+        INSERT INTO queries VALUES (NULL, ?, ?, ?, ?)
+    ''', (str(ctx.author), str(ctx.channel), prompt, datetime.now()))
+    query_id = cur.lastrowid
+    conn.commit()
+
     raw_prompt = prompt
     options, prompt = parse_prompt(prompt)
     if 'seed' not in options:
@@ -256,14 +266,29 @@ async def generate(ctx, *, prompt):
     def create_file(image):
         return discord.File(image, filename='result.png', description=prompt)
 
+    # TOOD: this is absolutely ugly... clean up!
     if isinstance(result['image'], list):
         sent_msg = await ctx.reply(reply_msg, files=list(map(create_file, result['image'])))
+
+        now = datetime.now()
+        cur.executemany('''
+            INSERT INTO responses
+            VALUES (NULL, ?, ?, ?, ?)
+        ''', [ (query_id, now, sqlite3.Binary(image.getvalue()), is_nsfw) for (image, is_nsfw) in zip(result['image'], result['is_nsfw']) ] )
+        conn.commit()
     else:
         if result['is_nsfw']:
             await ctx.reply('不適切な可能性のある内容が検出されました。生成をし直すか、別なプロンプトを試してください。')
             return
         else:
             sent_msg = await ctx.reply(reply_msg, file=create_file(result['image']))
+
+        now = datetime.now()
+        cur.execute('''
+            INSERT INTO responses
+            VALUES (NULL, ?, ?, ?, ?)
+        ''', (query_id, now, sqlite3.Binary(result['image'].getvalue()), result['is_nsfw']))
+        conn.commit()
 
     def check(msg):
         return (
