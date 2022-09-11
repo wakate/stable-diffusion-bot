@@ -2,7 +2,21 @@
 
 A gartic-phone-like game where the AI draws for you!
 
-- https://stackoverflow.com/questions/63809553/how-to-run-fastapi-application-from-poetry
+## howto
+
+server:
+```
+$ cd server
+$ poetry install
+$ WORKER_SECRET='...' DISCORD_TOKEN='...' poetry run python diffusive_phone_server/main.py
+```
+
+worker:
+```
+$ cd worker
+$ poetry install
+$ SERVER_SECRET='...' DIFFUSION_TOKEN='...' poetry run python diffusive_phone_worker/main.py
+```
 
 ## TODO
 
