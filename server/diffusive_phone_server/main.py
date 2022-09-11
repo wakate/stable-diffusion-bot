@@ -114,6 +114,7 @@ class WorkQueue():
                     if worker.is_ready():
                         chosen_worker = worker
                         worker.mark_busy()
+                        break
             
             # TODO: if this happens a lot, maybe send a message saying
             # workers are congested?
