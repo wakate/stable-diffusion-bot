@@ -38,11 +38,13 @@ class Worker():
         self,
         last_message_on: datetime,
         id: str,
+        n_limit: int,
         remote_address,
         websocket,
     ):
         self.last_message_on = last_message_on
         self.id = id
+        self.n_limit = n_limit
         self.remote_address = remote_address
         self.state = WorkerState.Ready
         self.websocket = websocket
@@ -76,10 +78,20 @@ class Worker():
             return None
 
         self.state = WorkerState.Ready
-        return {
-            'image': io.BytesIO(base64.b64decode(m['image'].encode('ascii'))),
-            'is_nsfw': m['is_nsfw'],
-        }
+
+        def decode_image(s):
+            return io.BytesIO(base64.b64decode(s.encode('ascii')))
+
+        if isinstance(m['image'], list):
+            return {
+                'image': list(map(decode_image, m['image'])),
+                'is_nsfw': m['is_nsfw']
+            }
+        else:
+            return {
+                'image': decode_image(m['image']),
+                'is_nsfw': m['is_nsfw'],
+            }
 
     async def done(self):
        await self.death_future
@@ -111,7 +123,7 @@ class WorkQueue():
             async with self.workers_lock:
                 logging.info({ id: (worker.remote_address, worker.state) for (id, worker) in self.workers.items() })
                 for worker in self.workers.values():
-                    if worker.is_ready():
+                    if worker.is_ready() and (options['n'] <= worker.n_limit):
                         chosen_worker = worker
                         worker.mark_busy()
                         break
@@ -137,6 +149,7 @@ async def ws_handler(ws):
             worker = Worker(
                 last_message_on=datetime.now(),
                 id=m['worker_id'],
+                n_limit=m['n_limit'],
                 remote_address=ws.remote_address,
                 websocket=ws,
             )
@@ -181,6 +194,7 @@ def parse_prompt(prompt):
         'height': lambda x: min(512, int(x)),
         'eta': float,
         'seed': int,
+        'n': int,
     }
 
     for (name, parser) in allowed_options.items():
@@ -207,6 +221,8 @@ async def generate(ctx, *, prompt):
     if 'seed' not in options:
         # TODO think about this
         options['seed'] = random.randint(0, 1000000)
+    if 'n' not in options:
+        options['n'] = 1
     logging.info(f'Running generation for prompt: "{prompt}" ({options}) (raw prompt: {raw_prompt}) ({ctx})')
 
     result = await work_queue.dispatch(prompt, options)
@@ -217,24 +233,31 @@ async def generate(ctx, *, prompt):
         result = await work_queue.dispatch(prompt, options)
 
     logging.info(f'Done (is_nsfw={result["is_nsfw"]}).')
+    reply_msg = f'プロンプト: "{prompt}" ({options})'
 
-    if result['is_nsfw']:
-        await ctx.reply('不適切な可能性のある内容が検出されました。生成をし直すか、別なプロンプトを試してください。')
+    def create_file(image):
+        return discord.File(image, filename='result.png', description=prompt)
+
+    if isinstance(result['image'], list):
+        sent_msg = await ctx.reply(reply_msg, files=list(map(create_file, result['image'])))
     else:
-        reply_msg = f'プロンプト: "{prompt}" ({options})'
-        sent_msg = await ctx.reply(reply_msg, file=discord.File(result['image'], filename='result.png', description=prompt))
+        if result['is_nsfw']:
+            await ctx.reply('不適切な可能性のある内容が検出されました。生成をし直すか、別なプロンプトを試してください。')
+            return
+        else:
+            sent_msg = await ctx.reply(reply_msg, file=create_file(result['image']))
 
-        def check(msg):
-            return (
-                msg.type == discord.MessageType.reply and
-                msg.reference is not None and
-                msg.reference.message_id == sent_msg.id and
-                '提出' in msg.content
-            )
+    def check(msg):
+        return (
+            msg.type == discord.MessageType.reply and
+            msg.reference is not None and
+            msg.reference.message_id == sent_msg.id and
+            '提出' in msg.content
+        )
 
-        msg = await bot.wait_for('message', check=check)
-        # TODO: handle
-        await msg.reply('提出が完了しました!')
+    msg = await bot.wait_for('message', check=check)
+    # TODO: handle
+    await msg.reply('提出が完了しました!')
 
 async def main():
     discord.utils.setup_logging()

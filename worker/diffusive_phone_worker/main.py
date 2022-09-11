@@ -15,6 +15,7 @@ import torch
 DIFFUSION_TOKEN = os.environ['DIFFUSION_TOKEN']
 SERVER = os.environ.get('SERVER', 'ws://localhost:8000/ws')
 SERVER_SECRET = os.environ['SERVER_SECRET']
+N_LIMIT = os.environ.get('N_LIMIT', 1)
 
 # TODO: add authentication
 
@@ -41,6 +42,7 @@ async def connect():
         await websocket.send(json.dumps({
             'kind': 'ready',
             'worker_id': str(worker_id),
+            'n_limit': N_LIMIT,
             'secret': SERVER_SECRET,
         }))
         while True:
@@ -50,29 +52,50 @@ async def connect():
             options = m['options']
             logging.info(f'Running generation for prompt: "{prompt}" ({options})')
 
+            n = options['n']
+            assert(0 < n and n <= N_LIMIT)
+
             # TODO: this will always be in options?
             if 'seed' in options:
                 options['generator'] = torch.Generator(device='cuda').manual_seed(options['seed'])
                 del options['seed']
 
             inference_start = time.time()
-            with torch.autocast('cuda'):
-                result = pipe(prompt, **options)
+            if n == 1:
+                with torch.autocast('cuda'):
+                    result = pipe(prompt, **options)
 
-            image = result['sample'][0]
-            is_nsfw = result['nsfw_content_detected'][0]
+                image = result['sample'][0]
+                is_nsfw = result['nsfw_content_detected'][0]
+            else:
+                with torch.autocast('cuda'):
+                    result = pipe([prompt] * n, **options)
+
+                image = result['sample']
+                is_nsfw = result['nsfw_content_detected']
+
             inference_end = time.time()
-
             logging.info(f'Generation complete ({inference_end - inference_start} seconds)')
 
-            buffer = BytesIO()
-            image.save(buffer, format='PNG')
-            await websocket.send(json.dumps({
-                'kind': 'done',
-                'worker_id': str(worker_id),
-                'image':  base64.b64encode(buffer.getvalue()).decode('ascii'),
-                'is_nsfw': is_nsfw
-            }))
+            def encode_image(image):
+                buffer = BytesIO()
+                image.save(buffer, format='PNG')
+                return base64.b64encode(buffer.getvalue()).decode('ascii')
+
+            if n == 1:
+                await websocket.send(json.dumps({
+                    'kind': 'done',
+                    'worker_id': str(worker_id),
+                    'image':  encode_image(image),
+                    'is_nsfw': is_nsfw
+                }))
+            else:
+                await websocket.send(json.dumps({
+                    'kind': 'done',
+                    'worker_id': str(worker_id),
+                    'image':  list(map(encode_image, image)),
+                    'is_nsfw': is_nsfw
+                }))
 
 async def run():
     while True:
