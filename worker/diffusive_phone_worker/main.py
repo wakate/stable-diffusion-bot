@@ -84,7 +84,7 @@ async def connect():
 
             # TODO: this approach is very ugly, should fix
             if n == 1:
-                paylod = json.dumps({
+                payload = json.dumps({
                     'kind': 'done',
                     'worker_id': str(worker_id),
                     'image':  encode_image(image),

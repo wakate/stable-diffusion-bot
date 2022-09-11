@@ -26,6 +26,7 @@ $ SERVER_SECRET='...' DIFFUSION_TOKEN='...' poetry run python diffusive_phone_wo
 - [ ] generate multiple images at once?
 - [x] use a worker queue for generating multiple images in parallel?
 - [ ] add zstd compression for websocket comms
+- [ ] send message notifying user if cannot find worker
 
 - [x] deploy to AWS
   - domain name actually isn't really necessary...

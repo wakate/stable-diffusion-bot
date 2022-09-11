@@ -142,6 +142,13 @@ class WorkQueue():
 
         return (await chosen_worker.dispatch(prompt, options))
 
+    async def max_n(self):
+        n = 0
+        async with self.workers_lock:
+            for worker in self.workers.values():
+                n = max(n, worker.n_limit)
+        return n
+
 work_queue = WorkQueue()
 
 async def ws_handler(ws):
@@ -227,6 +234,13 @@ async def generate(ctx, *, prompt):
         options['seed'] = random.randint(0, 1000000)
     if 'n' not in options:
         options['n'] = 1
+
+    max_n = await work_queue.max_n()
+    if max_n == 0:
+        raise ValueError('ワーカーノードが稼働していません。')
+    if options['n'] > max_n:
+        raise ValueError(f'{options["n"]}枚の画像生成に対応していません(現在は最大{max_n}枚です)。nの値を減らして再度試してください。')
+
     logging.info(f'Running generation for prompt: "{prompt}" ({options}) (raw prompt: {raw_prompt}) ({ctx})')
 
     result = await work_queue.dispatch(prompt, options)
@@ -262,6 +276,11 @@ async def generate(ctx, *, prompt):
     msg = await bot.wait_for('message', check=check)
     # TODO: handle
     await msg.reply('提出が完了しました!')
+
+@bot.event
+async def on_command_error(ctx, error):
+    logging.error(f'Error occurred processing command "{error}"')
+    await ctx.reply(f'エラーが発生しました: "{error}"')
 
 async def main():
     discord.utils.setup_logging()
