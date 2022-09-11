@@ -84,19 +84,22 @@ async def connect():
 
             # TODO: this approach is very ugly, should fix
             if n == 1:
-                await websocket.send(json.dumps({
+                paylod = json.dumps({
                     'kind': 'done',
                     'worker_id': str(worker_id),
                     'image':  encode_image(image),
                     'is_nsfw': is_nsfw
-                }))
+                })
             else:
-                await websocket.send(json.dumps({
+                payload = json.dumps({
                     'kind': 'done',
                     'worker_id': str(worker_id),
                     'image':  list(map(encode_image, image)),
                     'is_nsfw': is_nsfw
-                }))
+                })
+
+            logging.info(f'Sending generation result ({len(payload)} bytes)')
+            await websocket.send(payload)
 
 async def run():
     while True:

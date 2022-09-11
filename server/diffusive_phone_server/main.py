@@ -70,7 +70,9 @@ class Worker():
                 'options': options,
             }))
 
-            m = json.loads(await self.websocket.recv())
+            payload = await self.websocket.recv()
+            self.logger.info(f'Received generation result ({len(payload)} bytes)')
+            m = json.loads(payload)
             assert(m['kind'] == 'done')
             self.last_message_on=datetime.now()
         except websockets.exceptions.WebSocketException as e:
