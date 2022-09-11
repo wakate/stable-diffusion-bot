@@ -6,6 +6,7 @@ CREATE TABLE queries(
     id INTEGER PRIMARY KEY,
     user TEXT NOT NULL,
     channel TEXT NOT NULL,
+    guild TEXT NOT NULL,
     query TEXT NOT NULL,
     created_at DATETIME NOT NULL
 );

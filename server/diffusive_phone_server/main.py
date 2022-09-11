@@ -231,9 +231,10 @@ conn = sqlite3.connect('server.db')
 # TODO: handle syntax errors (possibly print a help message?)
 @bot.command()
 async def generate(ctx, *, prompt):
+    # TODO: specify column names here.
     cur = conn.execute('''
-        INSERT INTO queries VALUES (NULL, ?, ?, ?, ?)
-    ''', (str(ctx.author), str(ctx.channel), prompt, datetime.now()))
+        INSERT INTO queries VALUES (NULL, ?, ?, ?, ?, ?)
+    ''', (str(ctx.author), str(ctx.channel), str(ctx.guild), prompt, datetime.now()))
     query_id = cur.lastrowid
     conn.commit()
 
