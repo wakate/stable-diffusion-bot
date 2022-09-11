@@ -21,12 +21,12 @@ $ SERVER_SECRET='...' DIFFUSION_TOKEN='...' poetry run python diffusive_phone_wo
 ## TODO
 
 - [x] switch to using Discord-bot-based communication
-- [ ] implement user authentication
+- [x] implement user authentication
 - [ ] add progress indicator?
 - [ ] generate multiple images at once?
 - [x] use a worker queue for generating multiple images in parallel?
 
-- [ ] deploy to AWS
+- [x] deploy to AWS
   - domain name actually isn't really necessary...
 - [ ] implement game
   - it would be nice if we could use buttons...
