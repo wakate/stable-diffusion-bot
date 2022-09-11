@@ -7,7 +7,7 @@ import os
 import logging
 import itertools
 import random
-import math
+import hashlib
 
 import asyncio
 import websockets
@@ -15,9 +15,19 @@ import websockets
 import discord
 from discord.ext import commands
 
+DISCORD_TOKEN = os.environ['DISCORD_TOKEN']
+WORKER_SECRET = os.environ['WORKER_SECRET']
+
+def hash(s):
+    m = hashlib.sha256()
+    m.update(s.encode('ascii'))
+    return m.digest()
+
+WORKER_SECRET = hash(WORKER_SECRET)
+
 class WorkerState(enum.Enum):
     Ready = enum.auto()
-    # TODO: Reserverd?
+    # TODO: Reserved?
     Busy = enum.auto()
     Dead = enum.auto()
 
@@ -112,13 +122,19 @@ class WorkQueue():
 work_queue = WorkQueue()
 
 async def ws_handler(ws):
-    m = json.loads(await ws.recv())
-    worker = Worker(
-        last_message_on=datetime.now(),
-        id=m['worker_id'],
-        websocket=ws,
-    )
-    await work_queue.add_worker(worker)
+    try:
+        m = json.loads(await ws.recv())
+        if hash(m['secret']) != WORKER_SECRET:
+            logging.error(f'Invalid worker secret: "{m["secret"]}"')
+        else:
+            worker = Worker(
+                last_message_on=datetime.now(),
+                id=m['worker_id'],
+                websocket=ws,
+            )
+            await work_queue.add_worker(worker)
+    except Exception as e:
+        logging.error(f'Exception occurred when handling websocket connection: {e}')
 
 async def run_ws_server():
     async with websockets.serve(ws_handler, 'localhost', 8000):
@@ -217,6 +233,6 @@ async def main():
     async with bot:
         # We intentionally create a reference here so this task doesn't get GC-ed.
         server = bot.loop.create_task(run_ws_server())
-        await bot.start(os.environ['DISCORD_TOKEN'])
+        await bot.start(DISCORD_TOKEN)
 
 asyncio.run(main())

@@ -12,10 +12,9 @@ import websockets
 from diffusers import StableDiffusionPipeline
 import torch
 
-diffusion_token = os.environ['DIFFUSION_TOKEN']
-# TODO: make this configurable
-#server = os.environ['SERVER']
-#key = os.environ['KEY']
+DIFFUSION_TOKEN = os.environ['DIFFUSION_TOKEN']
+SERVER = os.environ.get('SERVER', 'ws://localhost:8000/ws')
+SERVER_SECRET = os.environ['SERVER_SECRET']
 
 # TODO: add authentication
 
@@ -27,22 +26,22 @@ pipe = StableDiffusionPipeline.from_pretrained(
     "CompVis/stable-diffusion-v1-4",
     revision='fp16',
     torch_dtype=torch.float16,
-    use_auth_token=diffusion_token
+    use_auth_token=DIFFUSION_TOKEN
 )
 pipe.to('cuda')
 load_end = time.time()
 logging.info(f'Loading model done in {load_end - load_start} seconds')
 
-server = 'ws://localhost:8000/ws'
 worker_id = uuid.uuid4()
 logging.info(f'worker_id is {worker_id}')
 
 async def connect():
-    async with websockets.connect(server) as websocket:
+    async with websockets.connect(SERVER) as websocket:
         logging.info('Connected!')
         await websocket.send(json.dumps({
             'kind': 'ready',
-            'worker_id': str(worker_id)
+            'worker_id': str(worker_id),
+            'secret': SERVER_SECRET,
         }))
         while True:
             # TODO: add some timeout if something hangs on the websocket?
@@ -81,8 +80,7 @@ async def run():
         try:
             await connect()
         except (
-            websockets.exceptions.ConnectionClosedError,
-            websockets.exceptions.InvalidMessage,
+            websockets.exceptions.WebSocketException,
             asyncio.exceptions.TimeoutError,
             ConnectionRefusedError
         ) as e:
