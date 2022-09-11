@@ -20,6 +20,7 @@ WORKER_SECRET = os.environ['WORKER_SECRET']
 IP = os.environ.get('IP', 'localhost')
 PORT = os.environ.get('PORT', 8000)
 PING_TIMEOUT=150
+MAX_SIZE=512 * (2 ** 20) # 512MB
 
 def hash(s):
     m = hashlib.sha256()
@@ -159,7 +160,7 @@ async def ws_handler(ws):
         logging.error(f'Exception occurred when handling websocket connection: {e}')
 
 async def run_ws_server():
-    async with websockets.serve(ws_handler, IP, PORT, ping_timeout=PING_TIMEOUT):
+    async with websockets.serve(ws_handler, IP, PORT, ping_timeout=PING_TIMEOUT, max_size=MAX_SIZE):
         await asyncio.Future()
 
 intents = discord.Intents.default()
