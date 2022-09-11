@@ -38,12 +38,15 @@ class Worker():
         self,
         last_message_on: datetime,
         id: str,
+        remote_address,
         websocket,
     ):
         self.last_message_on = last_message_on
         self.id = id
+        self.remote_address = remote_address
         self.state = WorkerState.Ready
         self.websocket = websocket
+        # TODO: use websocket wait for disconnect coroutine?
         self.death_future = asyncio.get_event_loop().create_future()
         self.logger = logging.getLogger('worker')
         # TODO: handle disconnect
@@ -92,13 +95,13 @@ class WorkQueue():
         self.logger = logging.getLogger('work_queue')
 
     async def add_worker(self, worker):
-        self.logger.info(f'Adding worker: {worker.id}')
+        self.logger.info(f'Adding worker: {worker.id} ({worker.remote_address})')
         async with self.workers_lock:
             self.workers[worker.id] = worker
 
         await worker.done()
 
-        self.logger.info(f'Removing worker: {worker.id}')
+        self.logger.info(f'Removing worker: {worker.id} ({worker.remote_address})')
         async with self.workers_lock:
             del self.workers[worker.id]
 
@@ -132,6 +135,7 @@ async def ws_handler(ws):
             worker = Worker(
                 last_message_on=datetime.now(),
                 id=m['worker_id'],
+                remote_address=ws.remote_address,
                 websocket=ws,
             )
             await work_queue.add_worker(worker)
