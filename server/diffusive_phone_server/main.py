@@ -109,6 +109,7 @@ class WorkQueue():
         chosen_worker = None
         while chosen_worker is None:
             async with self.workers_lock:
+                logging.info(self.workers)
                 for worker in self.workers.values():
                     if worker.is_ready():
                         chosen_worker = worker
