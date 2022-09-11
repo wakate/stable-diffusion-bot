@@ -7,6 +7,7 @@ import os
 import logging
 import itertools
 import random
+import math
 
 import asyncio
 import websockets
@@ -151,7 +152,9 @@ def parse_prompt(prompt):
         'guidance_scale': float,
         # TODO: clamp
         'num_inference_steps': int,
-        # TODO: specifying height, weight results in OOM
+        # TODO: specifying height, weight larger than 512 results in OOM
+        'width': lambda x: min(512, int(x)),
+        'height': lambda x: min(512, int(x)),
         'eta': float,
         'seed': int,
     }
@@ -159,8 +162,20 @@ def parse_prompt(prompt):
     for (name, parser) in allowed_options.items():
         if name in options:
             ret[name] = parser(options[name])
+
+    # TODO: I can't seem to make this work :(
+    # if 'aspect_ratio' in options:
+    #     width, height = list(map(float, options['aspect_ratio'].split('x')))
+    #     multiple = math.sqrt((512/8)*(512/8)/width/height)
+    #     # width and height need to be integer multiples of 8
+    #     width, height = int(width*multiple)*8, int(height*multiple)*8
+    #     if width > 0 and height > 0:
+    #         ret['width'] = width
+    #         ret['height'] = height
+
     return (ret, prompt)
 
+# TODO: handle syntax errors (possibly print a help message?)
 @bot.command()
 async def generate(ctx, *, prompt):
     raw_prompt = prompt
