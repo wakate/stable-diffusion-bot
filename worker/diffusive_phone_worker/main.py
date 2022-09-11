@@ -15,7 +15,7 @@ import torch
 DIFFUSION_TOKEN = os.environ['DIFFUSION_TOKEN']
 SERVER = os.environ.get('SERVER', 'ws://localhost:8000/ws')
 SERVER_SECRET = os.environ['SERVER_SECRET']
-N_LIMIT = os.environ.get('N_LIMIT', 1)
+N_LIMIT = int(os.environ.get('N_LIMIT', '1'))
 
 # TODO: add authentication
 
