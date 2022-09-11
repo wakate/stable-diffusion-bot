@@ -82,6 +82,7 @@ async def connect():
                 image.save(buffer, format='PNG')
                 return base64.b64encode(buffer.getvalue()).decode('ascii')
 
+            # TODO: this approach is very ugly, should fix
             if n == 1:
                 await websocket.send(json.dumps({
                     'kind': 'done',
