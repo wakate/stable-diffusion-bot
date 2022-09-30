@@ -1,6 +1,6 @@
-# diffusive-phone
+# stable-diffusion-bot
 
-A gartic-phone-like game where the AI draws for you!
+Discordで話しかけるとStable Diffusionくんが絵を生成してくれるよ
 
 ## howto
 
